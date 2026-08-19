@@ -1,0 +1,7 @@
+flask
+flask-cors
+faster-whisper
+pymongo
+python-dotenv
+requests
+gunicorn
