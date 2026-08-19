@@ -15,12 +15,17 @@ app = Flask(__name__)
 
 CORS(
     app,
-    resources={
-        r"/*": {
-            "origins": "*"
-        }
-    }
+    resources={r"/*": {"origins": "*"}},
+    methods=["GET", "POST", "PUT", "OPTIONS"],
+    allow_headers=["Content-Type"]
 )
+
+@app.route("/health", methods=["GET"])
+def health():
+    return jsonify({
+        "status": "ok",
+        "message": "Backend is running"
+    }), 200
 
 # MongoDB connection
 mongo_uri = os.getenv("MONGO_URI")
