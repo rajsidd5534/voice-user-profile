@@ -1,6 +1,7 @@
 from faster_whisper import WhisperModel
-from user_parser import parse_user
 
+
+# Load Whisper model
 model = WhisperModel(
     "tiny",
     device="cpu",
@@ -9,15 +10,19 @@ model = WhisperModel(
 
 
 def transcribe_audio(audio_file):
-    segments, info = model.transcribe(audio_file)
+    segments, info = model.transcribe(
+        audio_file,
+        beam_size=1,
+        vad_filter=True
+    )
 
     text = ""
 
     for segment in segments:
-        text += segment.text
+        text += segment.text + " "
 
     return text.strip()
 
 
 if __name__ == "__main__":
-    print("speech_to_text module is ready.")
+    print("Speech-to-text module is ready.")
