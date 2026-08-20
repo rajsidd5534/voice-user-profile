@@ -1,11 +1,12 @@
 from faster_whisper import WhisperModel
 
 
-# Load Whisper model
 model = WhisperModel(
-    "tiny",
+    "tiny.en",
     device="cpu",
-    compute_type="int8"
+    compute_type="int8",
+    cpu_threads=1,
+    num_workers=1
 )
 
 
@@ -13,13 +14,11 @@ def transcribe_audio(audio_file):
     segments, info = model.transcribe(
         audio_file,
         beam_size=1,
-        vad_filter=True
+        vad_filter=True,
+        condition_on_previous_text=False
     )
 
-    text = ""
-
-    for segment in segments:
-        text += segment.text + " "
+    text = " ".join(segment.text for segment in segments)
 
     return text.strip()
 
