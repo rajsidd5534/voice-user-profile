@@ -19,51 +19,84 @@ def parse_user(text):
             "action": "create"
         }
 
+    print("Parser input:", text)
+
     prompt = f"""
-You are a user information extraction system.
+Extract user information from this speech transcript.
 
-Extract the following information from the speech transcript:
+Return JSON with exactly these fields:
+- name
+- email
+- action
+- user_id
 
-1. action: "create" or "update"
-2. name
-3. email
-4. user_id if the action is update
+Rules:
 
-The transcript may contain:
-- different accents
-- missing connecting words
-- spoken email formats
-- speech-to-text mistakes
-- "at", "at the rate", "at the red", "at rate" meaning "@"
-- "dot", "period", "point" meaning "."
-- "gmail" should remain gmail.com when appropriate
+1. action must be "create" or "update".
+2. Extract the actual person's name.
+3. Extract the actual email.
+4. Do NOT include words like "and", "my", "email", "is" in the name.
+5. Spoken email variations must be understood.
+
+Examples of spoken @:
+- at
+- at the rate
+- at rate
+- at the red
+- at the raet
+
+Examples of spoken dot:
+- dot
+- period
+- point
 
 Examples:
 
-"my name is Neha and my email is neha at gmail dot com"
-=> name: Neha
-=> email: neha@gmail.com
+"My name is Neha and my email is neha at gmail dot com"
 
-"my name is Neha and my email is neha at the rate gmail dot com"
-=> name: Neha
-=> email: neha@gmail.com
+Return:
+{{
+    "name": "Neha",
+    "email": "neha@gmail.com",
+    "action": "create",
+    "user_id": null
+}}
 
-"my name is Neha and my email is neha at the red gmail dot com"
-=> name: Neha
-=> email: neha@gmail.com
+"My name is Neha and my email is neha at the rate gmail dot com"
 
-"update user 5, change my name to Raj and email to raj at gmail dot com"
-=> action: update
-=> user_id: 5
-=> name: Raj
-=> email: raj@gmail.com
+Return:
+{{
+    "name": "Neha",
+    "email": "neha@gmail.com",
+    "action": "create",
+    "user_id": null
+}}
+
+"My name is Neha and my email is neha at the red gmail dot com"
+
+Return:
+{{
+    "name": "Neha",
+    "email": "neha@gmail.com",
+    "action": "create",
+    "user_id": null
+}}
+
+"Update user 5. Change my name to Raj and my email to raj at gmail dot com"
+
+Return:
+{{
+    "name": "Raj",
+    "email": "raj@gmail.com",
+    "action": "update",
+    "user_id": 5
+}}
 
 IMPORTANT:
-- Do not invent a name or email.
-- If the information cannot be reliably determined, return null.
+- Do not guess missing information.
+- If name cannot be determined, use null.
+- If email cannot be determined, use null.
 - Return ONLY valid JSON.
-- Do not include markdown.
-- Do not include explanations.
 
 Transcript:
 {text}
@@ -72,7 +105,7 @@ Transcript:
     try:
 
         response = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
+            model="llama-3.1-8b-instant",
             messages=[
                 {
                     "role": "system",
@@ -83,15 +116,11 @@ Transcript:
                     "content": prompt
                 }
             ],
-            temperature=0
+            temperature=0,
+            response_format={"type": "json_object"}
         )
 
         result = response.choices[0].message.content.strip()
-
-        # Remove accidental markdown fences
-        result = result.replace("```json", "")
-        result = result.replace("```", "")
-        result = result.strip()
 
         data = json.loads(result)
 
@@ -103,11 +132,8 @@ Transcript:
             "action": action
         }
 
-        if action == "update":
-            user_id = data.get("user_id")
-
-            if user_id is not None:
-                user["id"] = int(user_id)
+        if action == "update" and data.get("user_id") is not None:
+            user["id"] = int(data["user_id"])
 
         print("LLM Parsed User:")
         print(user)
