@@ -1,202 +1,14 @@
-import re
+import os
+import json
+from groq import Groq
+from dotenv import load_dotenv
 
+load_dotenv()
 
-# -----------------------------------------
-# EMAIL NORMALIZATION
-# -----------------------------------------
+client = Groq(
+    api_key=os.getenv("GROQ_API_KEY")
+)
 
-def normalize_email(email):
-    if not email:
-        return None
-
-    email = email.lower().strip()
-
-    # Spoken variations
-    email = re.sub(r"\bat\s+the\s+rate\b", "@", email)
-    email = re.sub(r"\bat\s+rate\b", "@", email)
-    email = re.sub(r"\bat\s+the\b", "@", email)
-    email = re.sub(r"\bat\b", "@", email)
-
-    # Spoken dot
-    email = re.sub(r"\bdot\b", ".", email)
-
-    # Remove spaces around @ and .
-    email = re.sub(r"\s*@\s*", "@", email)
-    email = re.sub(r"\s*\.\s*", ".", email)
-
-    # Remove remaining spaces
-    email = re.sub(r"\s+", "", email)
-
-    return email
-
-
-# -----------------------------------------
-# EMAIL VALIDATION
-# -----------------------------------------
-
-def is_valid_email(email):
-    if not email:
-        return False
-
-    pattern = r"^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$"
-
-    return re.fullmatch(pattern, email) is not None
-
-
-# -----------------------------------------
-# EXTRACT EMAIL
-# -----------------------------------------
-
-def extract_email(text):
-
-    text = text.lower().strip()
-
-    # -------------------------------------
-    # Normal email
-    # neha@gmail.com
-    # -------------------------------------
-
-    match = re.search(
-        r"[\w.-]+@[\w.-]+\.[a-z]{2,}",
-        text,
-        re.IGNORECASE
-    )
-
-    if match:
-        email = normalize_email(match.group(0))
-
-        if is_valid_email(email):
-            return email
-
-    # -------------------------------------
-    # Spoken email
-    #
-    # neha at gmail dot com
-    # neha at the rate gmail dot com
-    # neha at the gmail dot com
-    # -------------------------------------
-
-    spoken_pattern = (
-        r"[\w.-]+"
-        r"\s+"
-        r"(?:at\s+(?:the\s+)?(?:rate\s+)?)"
-        r"[\w.-]+"
-        r"\s+dot\s+"
-        r"[a-z]{2,}"
-    )
-
-    match = re.search(
-        spoken_pattern,
-        text,
-        re.IGNORECASE
-    )
-
-    if match:
-        email = normalize_email(match.group(0))
-
-        if is_valid_email(email):
-            return email
-
-    # -------------------------------------
-    # neha at gmail.com
-    # -------------------------------------
-
-    match = re.search(
-        r"[\w.-]+\s+at\s+[\w.-]+\.[a-z]{2,}",
-        text,
-        re.IGNORECASE
-    )
-
-    if match:
-        email = normalize_email(match.group(0))
-
-        if is_valid_email(email):
-            return email
-
-    return None
-
-
-# -----------------------------------------
-# EXTRACT NAME
-# -----------------------------------------
-
-def extract_name(text):
-
-    text = text.strip()
-
-    # -------------------------------------
-    # My name is Neha and my email is...
-    # -------------------------------------
-
-    match = re.search(
-        r"\bmy\s+name\s+is\s+(.+?)(?=\s+and\s+my\s+email\b|\s+my\s+email\b|\s+email\b|$)",
-        text,
-        re.IGNORECASE
-    )
-
-    if match:
-        name = match.group(1).strip()
-
-        # Extra protection
-        name = re.sub(
-            r"\s+and\s*$",
-            "",
-            name,
-            flags=re.IGNORECASE
-        )
-
-        return name.strip()
-
-    # -------------------------------------
-    # My name Neha and my email...
-    # -------------------------------------
-
-    match = re.search(
-        r"\bmy\s+name\s+(.+?)(?=\s+and\s+my\s+email\b|\s+my\s+email\b|\s+email\b|$)",
-        text,
-        re.IGNORECASE
-    )
-
-    if match:
-        name = match.group(1).strip()
-
-        name = re.sub(
-            r"\s+and\s*$",
-            "",
-            name,
-            flags=re.IGNORECASE
-        )
-
-        return name.strip()
-
-    # -------------------------------------
-    # Change my name to Raj Kumar and...
-    # -------------------------------------
-
-    match = re.search(
-        r"\bchange\s+my\s+name\s+to\s+(.+?)(?=\s+and\s+my\s+email\b|\s+my\s+email\b|\s+email\b|$)",
-        text,
-        re.IGNORECASE
-    )
-
-    if match:
-        name = match.group(1).strip()
-
-        name = re.sub(
-            r"\s+and\s*$",
-            "",
-            name,
-            flags=re.IGNORECASE
-        )
-
-        return name.strip()
-
-    return None
-
-
-# -----------------------------------------
-# MAIN PARSER
-# -----------------------------------------
 
 def parse_user(text):
 
@@ -207,40 +19,118 @@ def parse_user(text):
             "action": "create"
         }
 
-    print("Parser input:", text)
+    prompt = f"""
+You are a user information extraction system.
 
-    # -------------------------------------
-    # Check UPDATE
-    # -------------------------------------
+Extract the following information from the speech transcript:
 
-    update_match = re.search(
-        r"\bupdate\s+user\s+(\d+)\b",
-        text,
-        re.IGNORECASE
+1. action: "create" or "update"
+2. name
+3. email
+4. user_id if the action is update
+
+The transcript may contain:
+- different accents
+- missing connecting words
+- spoken email formats
+- speech-to-text mistakes
+- "at", "at the rate", "at the red", "at rate" meaning "@"
+- "dot", "period", "point" meaning "."
+- "gmail" should remain gmail.com when appropriate
+
+Examples:
+
+"my name is Neha and my email is neha at gmail dot com"
+=> name: Neha
+=> email: neha@gmail.com
+
+"my name is Neha and my email is neha at the rate gmail dot com"
+=> name: Neha
+=> email: neha@gmail.com
+
+"my name is Neha and my email is neha at the red gmail dot com"
+=> name: Neha
+=> email: neha@gmail.com
+
+"update user 5, change my name to Raj and email to raj at gmail dot com"
+=> action: update
+=> user_id: 5
+=> name: Raj
+=> email: raj@gmail.com
+
+IMPORTANT:
+- Do not invent a name or email.
+- If the information cannot be reliably determined, return null.
+- Return ONLY valid JSON.
+- Do not include markdown.
+- Do not include explanations.
+
+Transcript:
+{text}
+"""
+
+    try:
+
+        response = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You extract structured user information from speech transcripts."
+                },
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ],
+            temperature=0
+        )
+
+        result = response.choices[0].message.content.strip()
+
+        # Remove accidental markdown fences
+        result = result.replace("```json", "")
+        result = result.replace("```", "")
+        result = result.strip()
+
+        data = json.loads(result)
+
+        action = data.get("action", "create").lower()
+
+        user = {
+            "name": data.get("name"),
+            "email": data.get("email"),
+            "action": action
+        }
+
+        if action == "update":
+            user_id = data.get("user_id")
+
+            if user_id is not None:
+                user["id"] = int(user_id)
+
+        print("LLM Parsed User:")
+        print(user)
+
+        return user
+
+    except Exception as e:
+
+        print("LLM Parser Error:", e)
+
+        return {
+            "name": None,
+            "email": None,
+            "action": "create"
+        }
+
+
+if __name__ == "__main__":
+
+    test_text = (
+        "Create a new user. "
+        "My name is Neha and my email is "
+        "neha at the red gmail dot com."
     )
 
-    # -------------------------------------
-    # Extract
-    # -------------------------------------
-
-    name = extract_name(text)
-    email = extract_email(text)
-
-    user = {
-        "name": name,
-        "email": email
-    }
-
-    # -------------------------------------
-    # Action
-    # -------------------------------------
-
-    if update_match:
-        user["id"] = int(update_match.group(1))
-        user["action"] = "update"
-    else:
-        user["action"] = "create"
-
-    print("Parsed User:", user)
-
-    return user
+    print(parse_user(test_text))
