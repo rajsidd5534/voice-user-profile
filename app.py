@@ -20,12 +20,14 @@ CORS(
     allow_headers=["Content-Type"]
 )
 
+
 @app.route("/health", methods=["GET"])
 def health():
     return jsonify({
         "status": "ok",
         "message": "Backend is running"
     }), 200
+
 
 # MongoDB connection
 mongo_uri = os.getenv("MONGO_URI")
@@ -47,7 +49,6 @@ def get_next_user_id():
 
     if last_user:
         return last_user["user_id"] + 1
-
 
     return 1
 
@@ -206,10 +207,20 @@ def process_voice():
 
             name = user.get("name")
             email = user.get("email")
+            email_confident = user.get("email_confident", False)
 
-            if not name or not email:
+            # Do not save user if name is missing
+            if not name:
                 return jsonify({
-                    "error": "Could not extract name or email",
+                    "error": "Could not understand the name. Please repeat your name.",
+                    "transcript": text
+                }), 400
+
+            # Do not save user if email is missing
+            # or LLM is not confident about the email
+            if not email or not email_confident:
+                return jsonify({
+                    "error": "Email is not valid. Please repeat your email.",
                     "transcript": text
                 }), 400
 

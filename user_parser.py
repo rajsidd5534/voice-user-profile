@@ -16,36 +16,36 @@ def parse_user(text):
         return {
             "name": None,
             "email": None,
-            "action": "create"
+            "action": "create",
+            "email_confident": False
         }
 
     print("Parser input:", text)
 
     prompt = f"""
-Extract user information from this speech transcript.
+You are an AI system that extracts user information from voice transcripts.
 
-Return JSON with exactly these fields:
+Extract:
+
 - name
 - email
-- action
-- user_id
+- action: create or update
+- user_id for update
 
-Rules:
+IMPORTANT EMAIL RULES:
 
-1. action must be "create" or "update".
-2. Extract the actual person's name.
-3. Extract the actual email.
-4. Do NOT include words like "and", "my", "email", "is" in the name.
-5. Spoken email variations must be understood.
+People speak emails differently.
 
-Examples of spoken @:
+Understand these as "@":
 - at
 - at the rate
 - at rate
 - at the red
+- at red
 - at the raet
+- similar speech-to-text mistakes
 
-Examples of spoken dot:
+Understand these as ".":
 - dot
 - period
 - point
@@ -53,50 +53,60 @@ Examples of spoken dot:
 Examples:
 
 "My name is Neha and my email is neha at gmail dot com"
-
-Return:
-{{
-    "name": "Neha",
-    "email": "neha@gmail.com",
-    "action": "create",
-    "user_id": null
-}}
+=> neha@gmail.com
 
 "My name is Neha and my email is neha at the rate gmail dot com"
-
-Return:
-{{
-    "name": "Neha",
-    "email": "neha@gmail.com",
-    "action": "create",
-    "user_id": null
-}}
+=> neha@gmail.com
 
 "My name is Neha and my email is neha at the red gmail dot com"
+=> neha@gmail.com
 
-Return:
+"My name is Raj and my email is raj at yahoo dot com"
+=> raj@yahoo.com
+
+IMPORTANT:
+
+1. Do NOT include "and", "my", "email", or "is" inside the name.
+
+2. Correct obvious speech-to-text mistakes when the intended email is clear.
+
+3. Do NOT invent an email when the transcript is ambiguous.
+
+4. If the email cannot be confidently determined, return:
+   "email": null
+   "email_confident": false
+
+5. If the email is clearly understood, return:
+   "email_confident": true
+
+6. If someone says something like:
+   "my email is nehagmail.com"
+   and you cannot confidently determine the intended email,
+   DO NOT convert it into a guessed email.
+
+7. Never create fake information.
+
+8. Return ONLY valid JSON.
+
+Expected JSON format:
+
 {{
     "name": "Neha",
     "email": "neha@gmail.com",
     "action": "create",
-    "user_id": null
+    "user_id": null,
+    "email_confident": true
 }}
 
-"Update user 5. Change my name to Raj and my email to raj at gmail dot com"
+If email is unclear:
 
-Return:
 {{
-    "name": "Raj",
-    "email": "raj@gmail.com",
-    "action": "update",
-    "user_id": 5
+    "name": "Neha",
+    "email": null,
+    "action": "create",
+    "user_id": null,
+    "email_confident": false
 }}
-
-IMPORTANT:
-- Do not guess missing information.
-- If name cannot be determined, use null.
-- If email cannot be determined, use null.
-- Return ONLY valid JSON.
 
 Transcript:
 {text}
@@ -109,7 +119,10 @@ Transcript:
             messages=[
                 {
                     "role": "system",
-                    "content": "You extract structured user information from speech transcripts."
+                    "content": (
+                        "You extract structured user information "
+                        "from speech transcripts."
+                    )
                 },
                 {
                     "role": "user",
@@ -129,11 +142,26 @@ Transcript:
         user = {
             "name": data.get("name"),
             "email": data.get("email"),
-            "action": action
+            "action": action,
+            "email_confident": data.get(
+                "email_confident",
+                False
+            )
         }
 
-        if action == "update" and data.get("user_id") is not None:
-            user["id"] = int(data["user_id"])
+        if action == "update":
+
+            user_id = data.get("user_id")
+
+            if user_id is not None:
+                user["id"] = int(user_id)
+
+        # -----------------------------------------
+        # Safety check
+        # -----------------------------------------
+
+        if not user["email_confident"]:
+            user["email"] = None
 
         print("LLM Parsed User:")
         print(user)
@@ -147,7 +175,8 @@ Transcript:
         return {
             "name": None,
             "email": None,
-            "action": "create"
+            "action": "create",
+            "email_confident": False
         }
 
 
