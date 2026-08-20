@@ -1,139 +1,202 @@
 import re
 
 
+# -----------------------------------------
+# EMAIL NORMALIZATION
+# -----------------------------------------
+
 def normalize_email(email):
     if not email:
         return None
 
     email = email.lower().strip()
 
-    # Common speech-to-text variations
-    email = re.sub(r"\s+at\s+", "@", email)
-    email = re.sub(r"\s+dot\s+", ".", email)
+    # Spoken variations
+    email = re.sub(r"\bat\s+the\s+rate\b", "@", email)
+    email = re.sub(r"\bat\s+rate\b", "@", email)
+    email = re.sub(r"\bat\s+the\b", "@", email)
+    email = re.sub(r"\bat\b", "@", email)
 
-    # Handle "at" / "dot" without perfect spacing
-    email = email.replace(" at ", "@")
-    email = email.replace(" dot ", ".")
+    # Spoken dot
+    email = re.sub(r"\bdot\b", ".", email)
 
     # Remove spaces around @ and .
     email = re.sub(r"\s*@\s*", "@", email)
     email = re.sub(r"\s*\.\s*", ".", email)
 
-    # Remove remaining spaces inside email
+    # Remove remaining spaces
     email = re.sub(r"\s+", "", email)
 
     return email
 
 
+# -----------------------------------------
+# EMAIL VALIDATION
+# -----------------------------------------
+
+def is_valid_email(email):
+    if not email:
+        return False
+
+    pattern = r"^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$"
+
+    return re.fullmatch(pattern, email) is not None
+
+
+# -----------------------------------------
+# EXTRACT EMAIL
+# -----------------------------------------
+
 def extract_email(text):
-    """
-    Extract email from normal email or spoken email.
-    Examples:
-    raj@gmail.com
-    raj at gmail dot com
-    raj at gmail.com
-    raj gmail dot com
-    """
 
-    text = text.lower()
+    text = text.lower().strip()
 
-    # Normal email: raj@gmail.com
+    # -------------------------------------
+    # Normal email
+    # neha@gmail.com
+    # -------------------------------------
+
     match = re.search(
         r"[\w.-]+@[\w.-]+\.[a-z]{2,}",
-        text
+        text,
+        re.IGNORECASE
     )
 
     if match:
-        return normalize_email(match.group(0))
+        email = normalize_email(match.group(0))
 
-    # Spoken email:
-    # raj at gmail dot com
+        if is_valid_email(email):
+            return email
+
+    # -------------------------------------
+    # Spoken email
+    #
+    # neha at gmail dot com
+    # neha at the rate gmail dot com
+    # neha at the gmail dot com
+    # -------------------------------------
+
+    spoken_pattern = (
+        r"[\w.-]+"
+        r"\s+"
+        r"(?:at\s+(?:the\s+)?(?:rate\s+)?)"
+        r"[\w.-]+"
+        r"\s+dot\s+"
+        r"[a-z]{2,}"
+    )
+
     match = re.search(
-        r"[\w.-]+\s+at\s+[\w.-]+(?:\s+dot\s+|\.)[a-z]{2,}",
-        text
+        spoken_pattern,
+        text,
+        re.IGNORECASE
     )
 
     if match:
-        return normalize_email(match.group(0))
+        email = normalize_email(match.group(0))
 
-    # "raj at gmail com"
+        if is_valid_email(email):
+            return email
+
+    # -------------------------------------
+    # neha at gmail.com
+    # -------------------------------------
+
     match = re.search(
-        r"[\w.-]+\s+at\s+[\w.-]+\s+(?:dot\s+)?[a-z]{2,}",
-        text
+        r"[\w.-]+\s+at\s+[\w.-]+\.[a-z]{2,}",
+        text,
+        re.IGNORECASE
     )
 
     if match:
-        email = match.group(0)
+        email = normalize_email(match.group(0))
 
-        # If "dot" was missed by transcription
-        parts = re.split(r"\s+at\s+", email)
-
-        if len(parts) == 2:
-            username = parts[0].strip()
-            domain = parts[1].strip().replace(" ", "")
-
-            # Common domain handling
-            if "." not in domain:
-                common_domains = {
-                    "gmailcom": "gmail.com",
-                    "yahoo": "yahoo.com",
-                    "hotmail": "hotmail.com",
-                    "outlook": "outlook.com"
-                }
-
-                domain = common_domains.get(
-                    domain,
-                    domain
-                )
-
-            return normalize_email(
-                f"{username}@{domain}"
-            )
+        if is_valid_email(email):
+            return email
 
     return None
 
+
+# -----------------------------------------
+# EXTRACT NAME
+# -----------------------------------------
 
 def extract_name(text):
-    """
-    Extract name even if small connecting words
-    like 'is', 'my', or 'and' are missing.
-    """
 
-    # Normal:
-    # my name is Raj
+    text = text.strip()
+
+    # -------------------------------------
+    # My name is Neha and my email is...
+    # -------------------------------------
+
     match = re.search(
-        r"my\s+name\s+(?:is\s+)?([A-Za-z]+(?:\s+[A-Za-z]+)?)",
+        r"\bmy\s+name\s+is\s+(.+?)(?=\s+and\s+my\s+email\b|\s+my\s+email\b|\s+email\b|$)",
         text,
         re.IGNORECASE
     )
 
     if match:
-        return match.group(1).strip()
+        name = match.group(1).strip()
 
-    # Update:
-    # change my name to Raj Kumar
+        # Extra protection
+        name = re.sub(
+            r"\s+and\s*$",
+            "",
+            name,
+            flags=re.IGNORECASE
+        )
+
+        return name.strip()
+
+    # -------------------------------------
+    # My name Neha and my email...
+    # -------------------------------------
+
     match = re.search(
-        r"change\s+my\s+name\s+(?:to\s+)?([A-Za-z]+(?:\s+[A-Za-z]+)?)",
+        r"\bmy\s+name\s+(.+?)(?=\s+and\s+my\s+email\b|\s+my\s+email\b|\s+email\b|$)",
         text,
         re.IGNORECASE
     )
 
     if match:
-        return match.group(1).strip()
+        name = match.group(1).strip()
 
-    # Handles transcript:
-    # "my name Raj"
+        name = re.sub(
+            r"\s+and\s*$",
+            "",
+            name,
+            flags=re.IGNORECASE
+        )
+
+        return name.strip()
+
+    # -------------------------------------
+    # Change my name to Raj Kumar and...
+    # -------------------------------------
+
     match = re.search(
-        r"name\s+(?:is\s+)?([A-Za-z]+(?:\s+[A-Za-z]+)?)",
+        r"\bchange\s+my\s+name\s+to\s+(.+?)(?=\s+and\s+my\s+email\b|\s+my\s+email\b|\s+email\b|$)",
         text,
         re.IGNORECASE
     )
 
     if match:
-        return match.group(1).strip()
+        name = match.group(1).strip()
+
+        name = re.sub(
+            r"\s+and\s*$",
+            "",
+            name,
+            flags=re.IGNORECASE
+        )
+
+        return name.strip()
 
     return None
 
+
+# -----------------------------------------
+# MAIN PARSER
+# -----------------------------------------
 
 def parse_user(text):
 
@@ -144,12 +207,21 @@ def parse_user(text):
             "action": "create"
         }
 
-    # Check UPDATE command
+    print("Parser input:", text)
+
+    # -------------------------------------
+    # Check UPDATE
+    # -------------------------------------
+
     update_match = re.search(
-        r"update\s+user\s+(\d+)",
+        r"\bupdate\s+user\s+(\d+)\b",
         text,
         re.IGNORECASE
     )
+
+    # -------------------------------------
+    # Extract
+    # -------------------------------------
 
     name = extract_name(text)
     email = extract_email(text)
@@ -159,10 +231,16 @@ def parse_user(text):
         "email": email
     }
 
+    # -------------------------------------
+    # Action
+    # -------------------------------------
+
     if update_match:
         user["id"] = int(update_match.group(1))
         user["action"] = "update"
     else:
         user["action"] = "create"
+
+    print("Parsed User:", user)
 
     return user

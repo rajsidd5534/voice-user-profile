@@ -15,7 +15,7 @@ def transcribe_audio(audio_file):
 
         transcription = client.audio.transcriptions.create(
             file=("voice.webm", file.read()),
-            model="whisper-large-v3-turbo",
+            model="whisper-large-v3",
             language="en",
             response_format="json",
             temperature=0
@@ -25,4 +25,4 @@ def transcribe_audio(audio_file):
 
 
 if __name__ == "__main__":
-    print("Groq speech-to-text is ready.")
+    print("Speech-to-text module is ready.")
