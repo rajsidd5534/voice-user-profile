@@ -1,27 +1,28 @@
-from faster_whisper import WhisperModel
+import os
+from groq import Groq
+from dotenv import load_dotenv
 
+load_dotenv()
 
-model = WhisperModel(
-    "tiny.en",
-    device="cpu",
-    compute_type="int8",
-    cpu_threads=1,
-    num_workers=1
+client = Groq(
+    api_key=os.getenv("GROQ_API_KEY")
 )
 
 
 def transcribe_audio(audio_file):
-    segments, info = model.transcribe(
-        audio_file,
-        beam_size=1,
-        vad_filter=True,
-        condition_on_previous_text=False
-    )
 
-    text = " ".join(segment.text for segment in segments)
+    with open(audio_file, "rb") as file:
 
-    return text.strip()
+        transcription = client.audio.transcriptions.create(
+            file=("voice.webm", file.read()),
+            model="whisper-large-v3-turbo",
+            language="en",
+            response_format="json",
+            temperature=0
+        )
+
+    return transcription.text.strip()
 
 
 if __name__ == "__main__":
-    print("Speech-to-text module is ready.")
+    print("Groq speech-to-text is ready.")
