@@ -1,5 +1,6 @@
 import { useRef, useState } from "react";
 import "./App.css";
+
 const API_URL = import.meta.env.VITE_API_URL;
 
 function App() {
@@ -8,6 +9,7 @@ function App() {
   const [transcript, setTranscript] = useState("");
   const [action, setAction] = useState("");
   const [user, setUser] = useState(null);
+  const [users, setUsers] = useState([]);
   const [error, setError] = useState("");
 
   const mediaRecorderRef = useRef(null);
@@ -19,6 +21,7 @@ function App() {
       setTranscript("");
       setAction("");
       setUser(null);
+      setUsers([]);
 
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: true,
@@ -74,10 +77,10 @@ function App() {
 
       formData.append("audio", audioBlob, "voice.webm");
 
-    const response = await fetch(`${API_URL}/voice`, {
-  method: "POST",
-  body: formData,
-});
+      const response = await fetch(`${API_URL}/voice`, {
+        method: "POST",
+        body: formData,
+      });
 
       const data = await response.json();
 
@@ -87,8 +90,12 @@ function App() {
 
       setTranscript(data.transcript);
       setAction(data.action);
-      setUser(data.user);
 
+      // CREATE / UPDATE
+      setUser(data.user || null);
+
+      // SHOW
+      setUsers(data.users || []);
     } catch (err) {
       console.error(err);
       setError(err.message);
@@ -151,6 +158,14 @@ function App() {
             "Update user 1. Change my name to Raj Kumar and my email to
             rajkumar@gmail.com."
           </p>
+
+          <p>
+            <strong>Show:</strong>
+            <br />
+            "Show user details."
+            <br />
+            "Show details of Raj."
+          </p>
         </div>
 
         {/* Error */}
@@ -163,6 +178,7 @@ function App() {
         {/* Result */}
         {transcript && (
           <>
+            {/* Transcript */}
             <div className="section">
               <h3>Transcribed Text</h3>
 
@@ -171,6 +187,7 @@ function App() {
               </div>
             </div>
 
+            {/* Action */}
             <div className="section">
               <h3>Detected Action</h3>
 
@@ -179,6 +196,7 @@ function App() {
               </div>
             </div>
 
+            {/* CREATE / UPDATE User */}
             {user && (
               <div className="section">
                 <h3>User Profile</h3>
@@ -202,8 +220,51 @@ function App() {
               </div>
             )}
 
+            {/* SHOW Users */}
+            {action === "SHOW" && users.length > 0 && (
+              <div className="section">
+                <h3>
+                  Users Found ({users.length})
+                </h3>
+
+                <div className="users-list">
+                  {users.map((item) => (
+                    <div
+                      className="profile"
+                      key={item.id}
+                    >
+                      <div>
+                        <span>👤</span>
+                        <strong>{item.name}</strong>
+                      </div>
+
+                      <div>
+                        <span>✉️</span>
+                        <span>{item.email}</span>
+                      </div>
+
+                      <div>
+                        <span>🆔</span>
+                        <span>User ID: {item.id}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Success Message */}
             <div className="success">
-              ✓ User {action === "CREATE" ? "Created" : "Updated"} Successfully
+              ✓{" "}
+              {action === "CREATE"
+                ? "User Created Successfully"
+                : action === "UPDATE"
+                ? "User Updated Successfully"
+                : action === "SHOW"
+                ? `${users.length} User${
+                    users.length !== 1 ? "s" : ""
+                  } Found`
+                : "Request Completed Successfully"}
             </div>
           </>
         )}

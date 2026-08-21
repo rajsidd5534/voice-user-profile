@@ -29,7 +29,10 @@ def health():
     }), 200
 
 
-# MongoDB connection
+# =========================================================
+# MONGODB CONNECTION
+# =========================================================
+
 mongo_uri = os.getenv("MONGO_URI")
 
 client = MongoClient(mongo_uri)
@@ -37,11 +40,12 @@ db = client["voice_user_db"]
 users_collection = db["users"]
 
 
-# -------------------------
+# =========================================================
 # GET NEXT USER ID
-# -------------------------
+# =========================================================
 
 def get_next_user_id():
+
     last_user = users_collection.find_one(
         {"user_id": {"$exists": True}},
         sort=[("user_id", -1)]
@@ -53,9 +57,9 @@ def get_next_user_id():
     return 1
 
 
-# -------------------------
+# =========================================================
 # CREATE USER
-# -------------------------
+# =========================================================
 
 @app.route("/users", methods=["POST"])
 def create_user():
@@ -89,9 +93,9 @@ def create_user():
     return jsonify(created_user), 201
 
 
-# -------------------------
+# =========================================================
 # GET USERS
-# -------------------------
+# =========================================================
 
 @app.route("/users", methods=["GET"])
 def get_users():
@@ -100,18 +104,22 @@ def get_users():
 
     for user in users_collection.find():
 
+        # Ignore incomplete/old documents
+        if "user_id" not in user:
+            continue
+
         users.append({
-            "id": user["user_id"],
-            "name": user["name"],
-            "email": user["email"]
+            "id": user.get("user_id"),
+            "name": user.get("name"),
+            "email": user.get("email")
         })
 
     return jsonify(users), 200
 
 
-# -------------------------
+# =========================================================
 # UPDATE USER
-# -------------------------
+# =========================================================
 
 @app.route("/users/<int:user_id>", methods=["PUT"])
 def update_user(user_id):
@@ -152,9 +160,9 @@ def update_user(user_id):
     }), 200
 
 
-# -------------------------
+# =========================================================
 # VOICE PROCESSING
-# -------------------------
+# =========================================================
 
 @app.route("/voice", methods=["POST"])
 def process_voice():
@@ -170,7 +178,10 @@ def process_voice():
 
     try:
 
-        # Save audio temporarily
+        # =====================================================
+        # SAVE AUDIO TEMPORARILY
+        # =====================================================
+
         with tempfile.NamedTemporaryFile(
             delete=False,
             suffix=".webm"
@@ -179,18 +190,18 @@ def process_voice():
             audio.save(temp_file.name)
             temp_path = temp_file.name
 
-        # -------------------------
+        # =====================================================
         # VOICE -> TEXT
-        # -------------------------
+        # =====================================================
 
         text = transcribe_audio(temp_path)
 
         print("\nTranscribed Text:")
         print(text)
 
-        # -------------------------
+        # =====================================================
         # TEXT -> USER DATA
-        # -------------------------
+        # =====================================================
 
         user = parse_user(text)
 
@@ -199,28 +210,39 @@ def process_voice():
 
         action = user.get("action")
 
-        # -------------------------
+        # =====================================================
         # CREATE
-        # -------------------------
+        # =====================================================
 
         if action == "create":
 
             name = user.get("name")
             email = user.get("email")
-            email_confident = user.get("email_confident", False)
+            email_confident = user.get(
+                "email_confident",
+                False
+            )
 
             # Do not save user if name is missing
             if not name:
+
                 return jsonify({
-                    "error": "Could not understand the name. Please repeat your name.",
+                    "error": (
+                        "Could not understand the name. "
+                        "Please repeat your name."
+                    ),
                     "transcript": text
                 }), 400
 
             # Do not save user if email is missing
             # or LLM is not confident about the email
             if not email or not email_confident:
+
                 return jsonify({
-                    "error": "Email is not valid. Please repeat your email.",
+                    "error": (
+                        "Email is not valid. "
+                        "Please repeat your email."
+                    ),
                     "transcript": text
                 }), 400
 
@@ -246,19 +268,22 @@ def process_voice():
                 "user": created_user
             }), 201
 
-        # -------------------------
+        # =====================================================
         # UPDATE
-        # -------------------------
+        # =====================================================
 
         elif action == "update":
 
             user_id = user.get("id")
 
             if not user_id:
+
                 return jsonify({
                     "transcript": text,
                     "action": "UPDATE",
-                    "error": "Please specify the user ID to update"
+                    "error": (
+                        "Please specify the user ID to update"
+                    )
                 }), 400
 
             update_data = {}
@@ -270,6 +295,7 @@ def process_voice():
                 update_data["email"] = user["email"]
 
             if not update_data:
+
                 return jsonify({
                     "transcript": text,
                     "action": "UPDATE",
@@ -282,6 +308,7 @@ def process_voice():
             )
 
             if result.matched_count == 0:
+
                 return jsonify({
                     "transcript": text,
                     "action": "UPDATE",
@@ -302,13 +329,110 @@ def process_voice():
                 }
             }), 200
 
-        # -------------------------
+        # =====================================================
+        # SHOW USERS
+        # =====================================================
+
+        elif action == "show":
+
+            # Optional user ID
+            user_id = user.get("id")
+
+            # Optional user name
+            name = user.get("name")
+
+            # -------------------------------------------------
+            # SHOW BY USER ID
+            # -------------------------------------------------
+
+            if user_id is not None:
+
+                found_users = list(
+                    users_collection.find({
+                        "user_id": int(user_id)
+                    })
+                )
+
+            # -------------------------------------------------
+            # SHOW BY NAME
+            # -------------------------------------------------
+
+            elif name:
+
+                found_users = list(
+                    users_collection.find({
+                        "name": {
+                            "$regex": f"^{name.strip()}$",
+                            "$options": "i"
+                        }
+                    })
+                )
+
+            # -------------------------------------------------
+            # SHOW ALL USERS
+            # -------------------------------------------------
+
+            else:
+
+                found_users = list(
+                    users_collection.find()
+                )
+
+            # -------------------------------------------------
+            # FORMAT USERS
+            # -------------------------------------------------
+
+            users = []
+
+            for db_user in found_users:
+
+                # IMPORTANT:
+                # Ignore old/incomplete MongoDB documents
+                # that don't have user_id.
+                if "user_id" not in db_user:
+                    continue
+
+                users.append({
+                    "id": db_user.get("user_id"),
+                    "name": db_user.get("name"),
+                    "email": db_user.get("email")
+                })
+
+            # -------------------------------------------------
+            # NO VALID USERS FOUND
+            # -------------------------------------------------
+
+            if not users:
+
+                return jsonify({
+                    "transcript": text,
+                    "action": "SHOW",
+                    "users": [],
+                    "count": 0,
+                    "message": "No valid users found"
+                }), 404
+
+            # -------------------------------------------------
+            # RETURN USERS
+            # -------------------------------------------------
+
+            return jsonify({
+                "transcript": text,
+                "action": "SHOW",
+                "users": users,
+                "count": len(users)
+            }), 200
+
+        # =====================================================
         # UNKNOWN ACTION
-        # -------------------------
+        # =====================================================
 
         return jsonify({
             "transcript": text,
-            "error": "Could not determine CREATE or UPDATE action"
+            "error": (
+                "Could not determine "
+                "CREATE, UPDATE or SHOW action"
+            )
         }), 400
 
     except Exception as e:
@@ -325,9 +449,9 @@ def process_voice():
             os.remove(temp_path)
 
 
-# -------------------------
+# =========================================================
 # START SERVER
-# -------------------------
+# =========================================================
 
 if __name__ == "__main__":
 
