@@ -160,11 +160,25 @@ function App() {
           </p>
 
           <p>
-            <strong>Show:</strong>
+            <strong>Show by ID:</strong>
             <br />
-            "Show user details."
+            "Show user 29."
+          </p>
+
+          <p>
+            <strong>Show by Name:</strong>
             <br />
-            "Show details of Raj."
+            "Show Neha."
+            <br />
+            "Show users named Neha."
+          </p>
+
+          <p>
+            <strong>Show by Email:</strong>
+            <br />
+            "Show neha@gmail.com."
+            <br />
+            "Show user with email neha@gmail.com."
           </p>
         </div>
 
@@ -250,6 +264,13 @@ function App() {
                     </div>
                   ))}
                 </div>
+              </div>
+            )}
+
+            {/* SHOW but no users */}
+            {action === "SHOW" && users.length === 0 && !error && (
+              <div className="error">
+                No users found.
               </div>
             )}
 

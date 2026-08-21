@@ -8,6 +8,7 @@ from user_parser import parse_user
 
 import os
 import tempfile
+import re
 
 load_dotenv()
 
@@ -20,6 +21,10 @@ CORS(
     allow_headers=["Content-Type"]
 )
 
+
+# =========================================================
+# HEALTH CHECK
+# =========================================================
 
 @app.route("/health", methods=["GET"])
 def health():
@@ -36,7 +41,9 @@ def health():
 mongo_uri = os.getenv("MONGO_URI")
 
 client = MongoClient(mongo_uri)
+
 db = client["voice_user_db"]
+
 users_collection = db["users"]
 
 
@@ -104,7 +111,7 @@ def get_users():
 
     for user in users_collection.find():
 
-        # Ignore incomplete/old documents
+        # Ignore incomplete documents
         if "user_id" not in user:
             continue
 
@@ -188,6 +195,7 @@ def process_voice():
         ) as temp_file:
 
             audio.save(temp_file.name)
+
             temp_path = temp_file.name
 
         # =====================================================
@@ -217,13 +225,18 @@ def process_voice():
         if action == "create":
 
             name = user.get("name")
+
             email = user.get("email")
+
             email_confident = user.get(
                 "email_confident",
                 False
             )
 
-            # Do not save user if name is missing
+            # -------------------------------------------------
+            # NAME VALIDATION
+            # -------------------------------------------------
+
             if not name:
 
                 return jsonify({
@@ -234,8 +247,10 @@ def process_voice():
                     "transcript": text
                 }), 400
 
-            # Do not save user if email is missing
-            # or LLM is not confident about the email
+            # -------------------------------------------------
+            # EMAIL VALIDATION
+            # -------------------------------------------------
+
             if not email or not email_confident:
 
                 return jsonify({
@@ -245,6 +260,10 @@ def process_voice():
                     ),
                     "transcript": text
                 }), 400
+
+            # -------------------------------------------------
+            # CREATE USER
+            # -------------------------------------------------
 
             user_id = get_next_user_id()
 
@@ -335,11 +354,15 @@ def process_voice():
 
         elif action == "show":
 
-            # Optional user ID
+            # -------------------------------------------------
+            # SEARCH VALUES
+            # -------------------------------------------------
+
             user_id = user.get("id")
 
-            # Optional user name
             name = user.get("name")
+
+            email = user.get("email")
 
             # -------------------------------------------------
             # SHOW BY USER ID
@@ -354,6 +377,25 @@ def process_voice():
                 )
 
             # -------------------------------------------------
+            # SHOW BY EMAIL
+            # -------------------------------------------------
+
+            elif email:
+
+                found_users = list(
+                    users_collection.find({
+                        "email": {
+                            "$regex": (
+                                "^"
+                                + re.escape(email.strip())
+                                + "$"
+                            ),
+                            "$options": "i"
+                        }
+                    })
+                )
+
+            # -------------------------------------------------
             # SHOW BY NAME
             # -------------------------------------------------
 
@@ -362,7 +404,11 @@ def process_voice():
                 found_users = list(
                     users_collection.find({
                         "name": {
-                            "$regex": f"^{name.strip()}$",
+                            "$regex": (
+                                "^"
+                                + re.escape(name.strip())
+                                + "$"
+                            ),
                             "$options": "i"
                         }
                     })
@@ -386,9 +432,7 @@ def process_voice():
 
             for db_user in found_users:
 
-                # IMPORTANT:
-                # Ignore old/incomplete MongoDB documents
-                # that don't have user_id.
+                # Ignore incomplete documents
                 if "user_id" not in db_user:
                     continue
 
@@ -399,7 +443,7 @@ def process_voice():
                 })
 
             # -------------------------------------------------
-            # NO VALID USERS FOUND
+            # NO USERS FOUND
             # -------------------------------------------------
 
             if not users:
@@ -409,7 +453,7 @@ def process_voice():
                     "action": "SHOW",
                     "users": [],
                     "count": 0,
-                    "message": "No valid users found"
+                    "message": "No users found"
                 }), 404
 
             # -------------------------------------------------

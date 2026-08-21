@@ -12,6 +12,74 @@ client = Groq(
 )
 
 
+# =========================================================
+# NORMALIZE SPOKEN EMAIL
+# =========================================================
+
+def normalize_spoken_email(value):
+
+    if not value:
+        return None
+
+    email = value.strip().lower()
+
+    # Remove common ending punctuation
+    email = re.sub(r"[.!?,]+$", "", email)
+
+    # Convert spoken @ variations
+    email = re.sub(
+        r"\s+at\s+the\s+rate\s+",
+        "@",
+        email
+    )
+
+    email = re.sub(
+        r"\s+at\s+rate\s+",
+        "@",
+        email
+    )
+
+    email = re.sub(
+        r"\s+at\s+the\s+red\s+",
+        "@",
+        email
+    )
+
+    email = re.sub(
+        r"\s+at\s+red\s+",
+        "@",
+        email
+    )
+
+    email = re.sub(
+        r"\s+at\s+the\s+raet\s+",
+        "@",
+        email
+    )
+
+    email = re.sub(
+        r"\s+at\s+",
+        "@",
+        email
+    )
+
+    # Convert spoken dot variations
+    email = re.sub(
+        r"\s+(?:dot|period|point)\s+",
+        ".",
+        email
+    )
+
+    # Remove remaining spaces
+    email = re.sub(
+        r"\s+",
+        "",
+        email
+    )
+
+    return email
+
+
 def parse_user(text):
 
     if not text:
@@ -24,25 +92,11 @@ def parse_user(text):
 
     print("Parser input:", text)
 
-    # =========================================================
-    # NORMALIZE SPEECH-TO-TEXT
-    # =========================================================
-
     clean_text = re.sub(
         r"\s+",
         " ",
         text.strip()
     )
-
-    # Remove punctuation from the end
-    #
-    # Example:
-    # Show user details.
-    # Show user details!
-    # Show user details?
-    #
-    # becomes:
-    # Show user details
 
     clean_text = re.sub(
         r"[.!?]+$",
@@ -51,55 +105,33 @@ def parse_user(text):
     ).strip()
 
     # =========================================================
-    # SHOW COMMAND NORMALIZATION
+    # NORMALIZE "SO" -> "SHOW"
     # =========================================================
-    #
-    # Whisper can sometimes transcribe:
-    #
-    # "Show user details"
-    # as
-    # "So user details"
-    #
-    # or:
-    # "So, user details"
-    #
-    # We only convert "so" when it is at the beginning
-    # and is followed by a SHOW-related command.
-    #
-    # CREATE / UPDATE commands are not affected.
 
     show_text = re.sub(
-        r"^\s*so\s*,?\s+",
+        r"^\s*so\s+",
         "show ",
         clean_text,
         flags=re.IGNORECASE
     )
 
     # =========================================================
-    # SHOW USER DETAILS
+    # SHOW ALL USERS / DETAILS
     # =========================================================
 
     if re.search(
-        r"^\s*show\s+(?:me\s+)?(?:all\s+)?(?:user\s+)?details?\s*$",
+        r"^\s*show\s+(?:me\s+)?(?:all\s+)?"
+        r"(?:user|users)?\s*details?\s*$",
         show_text,
         re.IGNORECASE
     ):
 
-        user = {
+        return {
             "name": None,
             "email": None,
             "action": "show",
             "email_confident": False
         }
-
-        print("Parsed SHOW User:")
-        print(user)
-
-        return user
-
-    # =========================================================
-    # SHOW ALL USERS
-    # =========================================================
 
     if re.search(
         r"^\s*show\s+(?:me\s+)?(?:all\s+)?users?\s*$",
@@ -107,28 +139,132 @@ def parse_user(text):
         re.IGNORECASE
     ):
 
-        user = {
+        return {
             "name": None,
             "email": None,
             "action": "show",
             "email_confident": False
         }
 
-        print("Parsed SHOW User:")
-        print(user)
+    # =========================================================
+    # SHOW BY USER ID
+    # =========================================================
 
-        return user
+    show_user_id_match = re.search(
+        r"^\s*show\s+(?:me\s+)?user\s+(\d+)\s*$",
+        show_text,
+        re.IGNORECASE
+    )
+
+    if show_user_id_match:
+
+        return {
+            "name": None,
+            "email": None,
+            "action": "show",
+            "email_confident": False,
+            "id": int(show_user_id_match.group(1))
+        }
 
     # =========================================================
-    # SHOW DETAILS OF NAME
+    # SHOW USER WITH EMAIL
     # =========================================================
     #
     # Examples:
     #
-    # Show details of Raj
-    # Show details for Raj
-    # Show me details of Neha
-    # So details of Raj
+    # Show user with email neha@gmail.com
+    # Show user with email neha at gmail dot com
+    # Show user with email neha at the rate gmail dot com
+    # Show user with email neha at the red gmail dot com
+    #
+    # Also handles when Whisper drops "show":
+    #
+    # User with email neha at the rate gmail dot com
+
+    show_email_phrase_match = re.search(
+        r"^\s*(?:show\s+)?"
+        r"(?:user\s+)?with\s+email\s+"
+        r"(.+?)\s*$",
+        show_text,
+        re.IGNORECASE
+    )
+
+    if show_email_phrase_match:
+
+        raw_email = show_email_phrase_match.group(1).strip()
+
+        email = normalize_spoken_email(raw_email)
+
+        if email and "@" in email:
+
+            return {
+                "name": None,
+                "email": email,
+                "action": "show",
+                "email_confident": True
+            }
+
+    # =========================================================
+    # SHOW DIRECT EMAIL
+    # =========================================================
+    #
+    # Show neha@gmail.com
+
+    direct_email_match = re.search(
+        r"^\s*show\s+"
+        r"([\w.+-]+@[\w.-]+\.[A-Za-z]{2,})\s*$",
+        show_text,
+        re.IGNORECASE
+    )
+
+    if direct_email_match:
+
+        return {
+            "name": None,
+            "email": direct_email_match.group(1).lower(),
+            "action": "show",
+            "email_confident": True
+        }
+
+    # =========================================================
+    # SHOW SPOKEN EMAIL
+    # =========================================================
+    #
+    # Show neha at gmail dot com
+    # Show neha at the rate gmail dot com
+    # Show neha at the red gmail dot com
+    #
+    # Also supports:
+    # Show neha at gmail.com
+
+    spoken_email_match = re.search(
+        r"^\s*show\s+(.+?)\s*$",
+        show_text,
+        re.IGNORECASE
+    )
+
+    if spoken_email_match:
+
+        possible_email = normalize_spoken_email(
+            spoken_email_match.group(1)
+        )
+
+        if (
+            possible_email
+            and "@" in possible_email
+            and "." in possible_email.split("@")[-1]
+        ):
+
+            return {
+                "name": None,
+                "email": possible_email,
+                "action": "show",
+                "email_confident": True
+            }
+
+    # =========================================================
+    # SHOW DETAILS OF NAME
+    # =========================================================
 
     show_details_match = re.search(
         r"^\s*show\s+(?:me\s+)?(?:the\s+)?details?\s+"
@@ -139,64 +275,16 @@ def parse_user(text):
 
     if show_details_match:
 
-        name = show_details_match.group(1).strip()
-
-        user = {
-            "name": name,
+        return {
+            "name": show_details_match.group(1).strip(),
             "email": None,
             "action": "show",
             "email_confident": False
         }
-
-        print("Parsed SHOW User:")
-        print(user)
-
-        return user
-
-    # =========================================================
-    # SHOW NAME'S DETAILS
-    # =========================================================
-    #
-    # Examples:
-    #
-    # Show Raj's details
-    # Show Neha's details
-    # Show Raj's user details
-    # So Raj's details
-
-    show_name_details_match = re.search(
-        r"^\s*show\s+(?:me\s+)?(.+?)['’]s\s+"
-        r"(?:user\s+)?details?\s*$",
-        show_text,
-        re.IGNORECASE
-    )
-
-    if show_name_details_match:
-
-        name = show_name_details_match.group(1).strip()
-
-        user = {
-            "name": name,
-            "email": None,
-            "action": "show",
-            "email_confident": False
-        }
-
-        print("Parsed SHOW User:")
-        print(user)
-
-        return user
 
     # =========================================================
     # SHOW USERS BY NAME
     # =========================================================
-    #
-    # Examples:
-    #
-    # Show users named Raj
-    # Show all users named Raj
-    # Show users with the name Raj
-    # So users named Raj
 
     show_named_match = re.search(
         r"^\s*show\s+(?:me\s+)?(?:all\s+)?users?\s+"
@@ -207,57 +295,42 @@ def parse_user(text):
 
     if show_named_match:
 
-        name = show_named_match.group(1).strip()
-
-        user = {
-            "name": name,
+        return {
+            "name": show_named_match.group(1).strip(),
             "email": None,
             "action": "show",
             "email_confident": False
         }
 
-        print("Parsed SHOW User:")
-        print(user)
-
-        return user
-
     # =========================================================
-    # SHOW USER BY ID
+    # SHOW NAME DIRECTLY
     # =========================================================
-    #
-    # Examples:
-    #
-    # Show user 39
-    # Show me user 39
-    # So user 39
 
-    show_user_id_match = re.search(
-        r"^\s*show\s+(?:me\s+)?user\s+(\d+)\s*$",
+    direct_show_name_match = re.search(
+        r"^\s*show\s+([A-Za-z][A-Za-z\s.-]*)\s*$",
         show_text,
         re.IGNORECASE
     )
 
-    if show_user_id_match:
+    if direct_show_name_match:
 
-        user_id = int(
-            show_user_id_match.group(1)
-        )
+        name = direct_show_name_match.group(1).strip()
 
-        user = {
-            "name": None,
-            "email": None,
-            "action": "show",
-            "email_confident": False,
-            "id": user_id
-        }
+        if name.lower() not in [
+            "user",
+            "users",
+            "details"
+        ]:
 
-        print("Parsed SHOW User:")
-        print(user)
-
-        return user
+            return {
+                "name": name,
+                "email": None,
+                "action": "show",
+                "email_confident": False
+            }
 
     # =========================================================
-    # CREATE / UPDATE
+    # CREATE / UPDATE LLM
     # =========================================================
 
     prompt = f"""
@@ -270,14 +343,10 @@ Extract:
 - action: create or update
 - user_id for update
 
-IMPORTANT:
-
-SHOW commands are already handled by the application.
-You only need to extract CREATE or UPDATE commands here.
+SHOW commands are handled separately.
+Only extract CREATE or UPDATE commands here.
 
 IMPORTANT EMAIL RULES:
-
-People speak emails differently.
 
 Understand these as "@":
 
@@ -318,28 +387,19 @@ IMPORTANT:
 3. Do NOT invent an email when the transcript is ambiguous.
 
 4. If the email cannot be confidently determined, return:
-
-"email": null
-"email_confident": false
+   "email": null
+   "email_confident": false
 
 5. If the email is clearly understood, return:
+   "email_confident": true
 
-"email_confident": true
+6. Never create fake information.
 
-6. If someone says something like:
+7. For UPDATE, extract the user ID if provided.
 
-"my email is nehagmail.com"
+8. Return ONLY valid JSON.
 
-and you cannot confidently determine the intended email,
-DO NOT convert it into a guessed email.
-
-7. Never create fake information.
-
-8. For UPDATE, extract the user ID if it is provided.
-
-9. Return ONLY valid JSON.
-
-Expected CREATE JSON:
+Expected CREATE:
 
 {{
     "name": "Neha",
@@ -349,7 +409,7 @@ Expected CREATE JSON:
     "email_confident": true
 }}
 
-Expected UPDATE JSON:
+Expected UPDATE:
 
 {{
     "name": "Raj",
@@ -400,14 +460,17 @@ Transcript:
 
         data = json.loads(result)
 
-        action = data.get(
-            "action",
-            "create"
+        # IMPORTANT:
+        # Prevent NoneType .lower() error
+        action = (
+            data.get("action") or "create"
         ).lower()
 
-        # Only CREATE and UPDATE are allowed
-        # from the LLM.
-        if action not in ["create", "update"]:
+        if action not in [
+            "create",
+            "update"
+        ]:
+
             action = "create"
 
         user = {
@@ -419,10 +482,6 @@ Transcript:
                 False
             )
         }
-
-        # =====================================================
-        # UPDATE USER ID
-        # =====================================================
 
         if action == "update":
 
@@ -438,10 +497,11 @@ Transcript:
                     user["id"] = None
 
         # =====================================================
-        # EMAIL SAFETY CHECK
+        # EMAIL SAFETY
         # =====================================================
 
         if not user["email_confident"]:
+
             user["email"] = None
 
         print("LLM Parsed User:")
@@ -461,43 +521,22 @@ Transcript:
         }
 
 
-# =============================================================
-# LOCAL TEST
-# =============================================================
+# =========================================================
+# TEST
+# =========================================================
 
 if __name__ == "__main__":
 
     test_cases = [
-
-        "Show user details.",
-
-        "So user details.",
-
-        "So, user details.",
-
-        "Show all users.",
-
-        "So all users.",
-
-        "Show details of Raj.",
-
-        "So details of Raj.",
-
-        "Show Raj's details.",
-
-        "So Raj's details.",
-
-        "Show user 39.",
-
-        "So user 39.",
-
-        "Create a new user. "
-        "My name is Neha and my email is "
-        "neha at the red gmail dot com.",
-
-        "Update user 39. "
-        "Change my name to Nisha Kumari and "
-        "my email to nisha12 at gmail dot com."
+        "Show neha@gmail.com",
+        "Show neha at gmail dot com",
+        "Show neha at the rate gmail dot com",
+        "Show neha at the red gmail dot com",
+        "Show user with email neha at the rate gmail dot com",
+        "User with email neha at the rate gmail dot com",
+        "So neha at gmail dot com",
+        "Show user 29",
+        "Show Neha"
     ]
 
     for test_text in test_cases:
